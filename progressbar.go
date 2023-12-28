@@ -263,6 +263,13 @@ func OptionClearOnFinish() Option {
 	}
 }
 
+// OptionClearOnFinish will clear the bar once its finished
+func OptionNoClearOnFinish() Option {
+	return func(p *ProgressBar) {
+		p.config.clearOnFinish = false
+	}
+}
+
 // OptionOnCompletion will invoke cmpl function once its finished
 func OptionOnCompletion(cmpl func()) Option {
 	return func(p *ProgressBar) {
@@ -438,6 +445,28 @@ func Default(max int64, description ...string) *ProgressBar {
 	)
 }
 
+// DefaultVariableMax provides a progressbar with recommended defaults.
+// Set max to -1 to use as a spinner.
+func DefaultVariableMax(max int64, description ...string) *ProgressBar {
+	desc := ""
+	if len(description) > 0 {
+		desc = description[0]
+	}
+	return NewOptions64(
+		max,
+		OptionSetDescription(desc),
+		OptionSetWriter(os.Stderr),
+		OptionSetWidth(10),
+		OptionThrottle(65*time.Millisecond),
+		OptionShowCount(),
+		OptionShowIts(),
+		OptionNoClearOnFinish(),
+		OptionSpinnerType(14),
+		OptionFullWidth(),
+		OptionSetRenderBlankState(true),
+	)
+}
+
 // DefaultSilent is the same as Default, but does not output anywhere.
 // String() can be used to get the output instead.
 func DefaultSilent(max int64, description ...string) *ProgressBar {
@@ -541,13 +570,14 @@ func (p *ProgressBar) Add64(num int64) error {
 		return errors.New("OptionSpinnerType and OptionSpinnerCustom cannot be used together")
 	}
 
-	if p.config.max == 0 {
-		return errors.New("max must be greater than 0")
+	max := p.config.max
+	if max <= 0 {
+		max = 1
 	}
 
-	if p.state.currentNum < p.config.max {
+	if p.state.currentNum < max {
 		if p.config.ignoreLength {
-			p.state.currentNum = (p.state.currentNum + num) % p.config.max
+			p.state.currentNum = (p.state.currentNum + num) % max
 		} else {
 			p.state.currentNum += num
 		}
@@ -566,13 +596,13 @@ func (p *ProgressBar) Add64(num int64) error {
 		p.state.counterNumSinceLast = 0
 	}
 
-	percent := float64(p.state.currentNum) / float64(p.config.max)
+	percent := float64(p.state.currentNum) / float64(max)
 	p.state.currentSaucerSize = int(percent * float64(p.config.width))
 	p.state.currentPercent = int(percent * 100)
 	updateBar := p.state.currentPercent != p.state.lastPercent && p.state.currentPercent > 0
 
 	p.state.lastPercent = p.state.currentPercent
-	if p.state.currentNum > p.config.max {
+	if p.state.currentNum > max {
 		return errors.New("current number exceeds max")
 	}
 
@@ -581,6 +611,29 @@ func (p *ProgressBar) Add64(num int64) error {
 		return p.render()
 	}
 
+	return nil
+}
+
+func (p *ProgressBar) IncreaseMax(num int) error {
+	if p.config.invisible {
+		return nil
+	}
+	p.lock.Lock()
+
+	if p.state.exit {
+		return nil
+	}
+
+	if (p.config.max + int64(num)) <= 0 {
+		return errors.New("max must be greater than 0")
+	}
+
+	p.config.max += int64(num)
+	p.state.finished = false
+	p.config.clearOnFinish = false
+	p.lock.Unlock()
+
+	p.Add64(0)
 	return nil
 }
 
