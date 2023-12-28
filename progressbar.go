@@ -66,7 +66,7 @@ type config struct {
 	description          string
 	iterationString      string
 	ignoreLength         bool // ignoreLength if max bytes not known
-
+	isFixed              bool
 	// whether the output is expected to contain color codes
 	colorCodes bool
 
@@ -309,6 +309,13 @@ func OptionShowDescriptionAtLineEnd() Option {
 	}
 }
 
+// OptionSetDescription sets the description of the bar to render in front of it
+func OptionNotFixed() Option {
+	return func(p *ProgressBar) {
+		p.config.isFixed = false
+	}
+}
+
 var defaultTheme = Theme{Saucer: "█", SaucerPadding: " ", BarStart: "|", BarEnd: "|"}
 
 // NewOptions constructs a new instance of ProgressBar, with any options you specify
@@ -455,6 +462,7 @@ func DefaultVariableMax(max int64, description ...string) *ProgressBar {
 	return NewOptions64(
 		max,
 		OptionSetDescription(desc),
+		OptionNotFixed(),
 		OptionSetWriter(os.Stderr),
 		OptionSetWidth(10),
 		OptionThrottle(65*time.Millisecond),
@@ -630,7 +638,6 @@ func (p *ProgressBar) IncreaseMax(num int) error {
 
 	p.config.max += int64(num)
 	p.state.finished = false
-	p.config.clearOnFinish = false
 	p.lock.Unlock()
 
 	p.Add64(0)
@@ -717,7 +724,7 @@ func (p *ProgressBar) render() error {
 	}
 
 	// check if the progress bar is finished
-	if !p.state.finished && p.state.currentNum >= p.config.max {
+	if !p.state.finished && p.state.currentNum >= p.config.max && p.config.isFixed {
 		p.state.finished = true
 		if !p.config.clearOnFinish {
 			renderProgressBar(p.config, &p.state)
